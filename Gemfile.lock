@@ -1,0 +1,21 @@
+GIT
+  remote: https://github.com/eventmachine/eventmachine.git
+  revision: 8ecaef136bbe768380b1b2fb9884765e625a05f5
+  specs:
+    eventmachine (1.0.0.beta.2)
+
+GIT
+  remote: https://github.com/pluginaweek/state_machine.git
+  revision: e625d2645a71fb5bc50ca61553b59b4890444508
+  specs:
+    state_machine (0.9.4)
+
+GEM
+  specs:
+
+PLATFORMS
+  ruby
+
+DEPENDENCIES
+  eventmachine!
+  state_machine!
