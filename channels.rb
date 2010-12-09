@@ -3,7 +3,7 @@ require 'state_machine'
 
 class InputResource < EM::Channel
   state_machine :initial => :inactive do
-    after_transition :on => :start, :do => :activate
+    after_transition :on => :start, :do => [:activate, :gather]
     after_transition :on => :stop, :do => :deactivate
     
     event :start do
@@ -18,12 +18,11 @@ end
 class RandomInput < InputResource
   def activate
     puts 'activating random input'
-    gather_input
   end
-  def gather_input(v=0)
-    @timer = EventMachine::Timer.new(v=(rand * 2)) do
+  def gather
+    @timer = EventMachine::Timer.new(v=(rand * 1.0)) do
       EM.defer lambda {self << [Time.now, v] }
-      EventMachine::Timer.new(v=(rand * 2)) {gather_input(v)}
+      gather
     end
   end
   def deactivate
@@ -33,20 +32,31 @@ class RandomInput < InputResource
 end
 
 EM.run do
-  random_input = RandomInput.new
+  random_input_1 = RandomInput.new
+  random_input_2 = RandomInput.new
 
-  random_input.subscribe do |m|
-    puts '1: ' + m.inspect
+  random_input_1.subscribe do |m|
+    puts 'input 1 output 1: ' + m.inspect
   end
 
-  random_input.subscribe do |m|
-    puts '2: ' + m.inspect
+  random_input_1.subscribe do |m|
+    puts 'input 1 output 2: ' + m.inspect
   end
 
-  random_input.start
+  random_input_2.subscribe do |m|
+    puts 'input 2 output 1: ' + m.inspect
+  end
 
-  EM.add_timer(60) do
+  random_input_2.subscribe do |m|
+    puts 'input 2 output 2: ' + m.inspect
+  end
+
+  random_input_1.start
+  random_input_2.start
+
+  EM.add_timer(10) do
+    random_input_1.stop
+    random_input_2.stop
     EM.stop
-    random_input.stop
   end
 end
