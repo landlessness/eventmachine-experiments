@@ -3,7 +3,7 @@ require 'state_machine'
 
 class InputResource < EM::Channel
   state_machine :initial => :inactive do
-    after_transition :on => :start, :do => [:activate, :gather]
+    after_transition :on => :start, :do => [:activate, :receive]
     after_transition :on => :stop, :do => :deactivate
     
     event :start do
@@ -16,47 +16,80 @@ class InputResource < EM::Channel
 end
 
 class RandomInput < InputResource
-  def activate
-    puts 'activating random input'
+  def initialize(name)
+    @name = name
+    super()
   end
-  def gather
+  def activate
+    puts 'activating random input ' + @name
+  end
+  def receive
     @timer = EventMachine::Timer.new(v=(rand * 1.0)) do
-      EM.defer lambda {self << [Time.now, v] }
-      gather
+      EM.defer lambda {
+        # pushes data into channel
+        self << [@name, Time.now, v]
+      }
+      receive
     end
   end
   def deactivate
-    puts 'deactivating random input'
+    puts 'deactivating random input ' + @name
     @timer.cancel
   end
 end
 
+class OutputResource
+end
+class PutsOutput < OutputResource
+  def initialize(name)
+    @name = name
+  end
+  def transmit(data)
+    puts @name + ': ' + data.inspect
+  end
+end
+
+class ApplicationHandler
+end
+class RandHandler < ApplicationHandler
+  
+  def initialize(options)
+    @inputs = options[:inputs]
+    @outputs = options[:outputs]
+  end
+  
+  def activate
+    @inputs.each do |i|
+      @outputs.each do |o|
+        i.subscribe do |message|
+          handle(o,message)
+        end
+      end
+    end
+    @inputs.each { |i| i.start }
+  end
+  
+  def handle(output,message)
+    output.transmit message
+  end
+  
+  def deactivate
+    @inputs.each { |i| i.stop }
+  end
+  
+end
 EM.run do
-  random_input_1 = RandomInput.new
-  random_input_2 = RandomInput.new
+  random_input_one = RandomInput.new('one')
+  random_input_two = RandomInput.new('two')
+  
+  puts_output_red = PutsOutput.new('red')
+  puts_output_blue = PutsOutput.new('blue')
 
-  random_input_1.subscribe do |m|
-    puts 'input 1 output 1: ' + m.inspect
-  end
-
-  random_input_1.subscribe do |m|
-    puts 'input 1 output 2: ' + m.inspect
-  end
-
-  random_input_2.subscribe do |m|
-    puts 'input 2 output 1: ' + m.inspect
-  end
-
-  random_input_2.subscribe do |m|
-    puts 'input 2 output 2: ' + m.inspect
-  end
-
-  random_input_1.start
-  random_input_2.start
-
+  h = RandHandler.new :inputs => [random_input_one, random_input_two], :outputs => [puts_output_red, puts_output_blue]
+  h.activate
+  
   EM.add_timer(10) do
-    random_input_1.stop
-    random_input_2.stop
+    h.deactivate
     EM.stop
   end
 end
