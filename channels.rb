@@ -1,7 +1,15 @@
 require 'eventmachine'
 require 'state_machine'
 
-class InputResource < EM::Channel
+class InputResource
+  
+  attr_reader :channel
+  
+  def initialize
+    @channel = EM::Channel.new
+    super()
+  end
+  
   state_machine :initial => :inactive do
     after_transition :on => :start, :do => [:activate, :receive]
     after_transition :on => :stop, :do => :deactivate
@@ -27,7 +35,7 @@ class RandomInput < InputResource
     @timer = EventMachine::Timer.new(v=(rand * 1.0)) do
       EM.defer {
         # pushes data into channel
-        self << [@name, Time.now, v]
+        @channel << [@name, Time.now, v]
       }
       receive
     end
@@ -61,7 +69,7 @@ class RandHandler < ApplicationHandler
   def activate
     @inputs.each do |i|
       @outputs.each do |o|
-        i.subscribe do |message|
+        i.channel.subscribe do |message|
           handle(o,message)
         end
       end
