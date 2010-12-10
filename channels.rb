@@ -5,7 +5,6 @@ class Base
   state_machine :initial => :inactive do
     after_transition :on => :start, :do => :activate
     after_transition :on => :stop, :do => :deactivate
-    
     event :start do
       transition :inactive => :active
     end
@@ -55,7 +54,6 @@ class RandomInput < InputResource
 end
 
 class OutputResource < Base
-  state_machine {after_transition :on => :start, :do => :transmit}
   def transmit;end
 end
 
