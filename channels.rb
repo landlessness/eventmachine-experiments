@@ -3,8 +3,8 @@ require 'state_machine'
 
 class Base
   state_machine :initial => :inactive do
-    after_transition :on => :start, :do => :activate
-    after_transition :on => :stop, :do => :deactivate
+    after_transition :on => :start, :do => :setup
+    after_transition :on => :stop, :do => :teardown
     event :start do
       transition :inactive => :active
     end
@@ -12,8 +12,8 @@ class Base
       transition :active => :inactive
     end    
   end
-  def activate;end
-  def deactivate;end
+  def setup;end
+  def teardown;end
 end
 
 class InputResource < Base
@@ -35,7 +35,7 @@ class RandomInput < InputResource
     @name = name
     super()
   end
-  def activate
+  def setup
     puts 'activating random input ' + @name
   end
   def receive
@@ -47,7 +47,7 @@ class RandomInput < InputResource
       receive
     end
   end
-  def deactivate
+  def teardown
     puts 'deactivating random input ' + @name
     @timer.cancel
   end
@@ -70,6 +70,7 @@ end
 class ApplicationHandler < Base
   def handle;end  
 end
+
 class RandHandler < ApplicationHandler
   
   def initialize(options)
@@ -78,7 +79,7 @@ class RandHandler < ApplicationHandler
     super()
   end
   
-  def activate
+  def setup
     @inputs.each do |i|
       @outputs.each do |o|
         i.subscribe do |message|
@@ -93,7 +94,7 @@ class RandHandler < ApplicationHandler
     output.transmit message
   end
   
-  def deactivate
+  def teardown
     @inputs.each { |i| i.stop }
   end
   
