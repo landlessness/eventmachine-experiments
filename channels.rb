@@ -25,7 +25,7 @@ class RandomInput < InputResource
   end
   def receive
     @timer = EventMachine::Timer.new(v=(rand * 1.0)) do
-      EM.defer lambda {
+      EM.defer {
         # pushes data into channel
         self << [@name, Time.now, v]
       }
