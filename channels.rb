@@ -1,19 +1,9 @@
 require 'eventmachine'
 require 'state_machine'
 
-class InputResource
-  
-  def initialize
-    @channel = EM::Channel.new
-    super()
-  end
-  
-  def subscribe(*a, &b)
-    @channel.subscribe(*a, &b)
-  end
-  
+class Base
   state_machine :initial => :inactive do
-    after_transition :on => :start, :do => [:activate, :receive]
+    after_transition :on => :start, :do => :activate
     after_transition :on => :stop, :do => :deactivate
     
     event :start do
@@ -22,6 +12,22 @@ class InputResource
     event :stop do
       transition :active => :inactive
     end    
+  end
+  def activate;end
+  def deactivate;end
+end
+
+class InputResource < Base
+  state_machine {after_transition :on => :start, :do => :receive}
+  def receive;end
+  
+  def initialize
+    @channel = EM::Channel.new
+    super()
+  end
+  
+  def subscribe(*a, &b)
+    @channel.subscribe(*a, &b)
   end
 end
 
@@ -48,24 +54,30 @@ class RandomInput < InputResource
   end
 end
 
-class OutputResource
+class OutputResource < Base
+  state_machine {after_transition :on => :start, :do => :transmit}
+  def transmit;end
 end
+
 class PutsOutput < OutputResource
   def initialize(name)
     @name = name
+    super()
   end
   def transmit(data)
     puts @name + ': ' + data.inspect
   end
 end
 
-class ApplicationHandler
+class ApplicationHandler < Base
+  def handle;end  
 end
 class RandHandler < ApplicationHandler
   
   def initialize(options)
     @inputs = options[:inputs]
     @outputs = options[:outputs]
+    super()
   end
   
   def activate
@@ -96,10 +108,10 @@ EM.run do
   puts_output_blue = PutsOutput.new('blue')
 
   h = RandHandler.new :inputs => [random_input_one, random_input_two], :outputs => [puts_output_red, puts_output_blue]
-  h.activate
+  h.start
   
   EM.add_timer(10) do
-    h.deactivate
+    h.stop
     EM.stop
   end
 end
