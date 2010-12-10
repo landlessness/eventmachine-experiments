@@ -3,11 +3,13 @@ require 'state_machine'
 
 class InputResource
   
-  attr_reader :channel
-  
   def initialize
     @channel = EM::Channel.new
     super()
+  end
+  
+  def subscribe(*a, &b)
+    @channel.subscribe(*a, &b)
   end
   
   state_machine :initial => :inactive do
@@ -69,7 +71,7 @@ class RandHandler < ApplicationHandler
   def activate
     @inputs.each do |i|
       @outputs.each do |o|
-        i.channel.subscribe do |message|
+        i.subscribe do |message|
           handle(o,message)
         end
       end
