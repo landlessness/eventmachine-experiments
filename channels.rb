@@ -99,6 +99,16 @@ class RandHandler < ApplicationHandler
   end
   
 end
+
+## resources.rb
+# could specifying input, output be like drawing rails routes?
+# Application.resources.specify do
+#   input :in_one, RandomInput.new('one')
+#   input :in_two, RandomInput.new('two')
+#   output :out_red, PutsOutput.new('red')
+#   output :out_blue, PutsOutput.new('blue')
+# end
+
 EM.run do
   random_input_one = RandomInput.new('one')
   random_input_two = RandomInput.new('two')
