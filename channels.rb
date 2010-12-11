@@ -52,22 +52,26 @@ module Erie
     def input(name, input_resource, options={})
       raise "'#{name}' is not an #{InputResource.name}." unless input_resource.is_a?(InputResource)
       puts 'name: ' + name.to_s + ' input_resource: ' + input_resource.inspect
+      input_resource.name = name.to_s
       @inputs[name] = input_resource
     end
     def output(name, output_resource, options={})
       raise "'#{name}' is not an #{OutputResource.name}." unless output_resource.is_a?(OutputResource)
       puts 'name: ' + name.to_s + ' output_resource: ' + output_resource.inspect
+      output_resource.name = name.to_s
       @outputs[name] = output_resource
     end
     def handler(name, handler_resource, options={}, &b)
       raise "'#{name}' is not an #{ApplicationHandler.name}." unless handler_resource.is_a?(ApplicationHandler)
       puts 'name: ' + name.to_s + ' handler_resource: ' + handler_resource.inspect
+      handler_resource.name = name.to_s
       @handlers[name] = handler_resource
       handler_resource.resources.instance_exec(&b) if block_given?
     end
   end
 
   class Base
+    attr_accessor :name
     state_machine :initial => :inactive do
       after_transition :on => :start, :do => :setup
       after_transition :on => :stop, :do => :teardown
@@ -118,6 +122,7 @@ module Erie
   end
 
   class ApplicationHandler < Base
+    # TODO: make this a singleton
     include ResourcesHandler
     state_machine {after_transition :on => :start, :do => [:start_handlers, :start_outputs, :start_inputs]}
     state_machine {after_transition :on => :stop, :do => [:stop_inputs, :stop_outputs, :stop_handlers]}
@@ -149,86 +154,111 @@ class RandomInput < Erie::InputResource
     puts 'setup random input ' + @name
   end
   def receive
-    @channel << [@name, Time.now, rand]
+    @channel << rand
   end
   def teardown
     puts 'teardown random input ' + @name
   end
 end
-# outputs/puts_output.rb
-class PutsOutput < Erie::OutputResource
-  def initialize(name)
-    @name = name
-    super()
-  end
 
+# outputs/puts_output.rb
+class FauxLEDOutput < Erie::OutputResource
+  state_machine :light_state, :initial => :dark do
+    event :turn_on do
+      transition :dark => :light
+    end
+    event :turn_off do
+      transition :light => :dark
+    end
+    after_transition :do => :transmit
+  end
+  
   def setup
     puts 'setup puts output ' + @name
   end
-  def transmit(data)
-    puts @name + ': ' + data.inspect
+  def transmit
+    puts @name + ': ' + self.light_state
   end
   def teardown
     puts 'teardown puts output ' + @name
   end
 end
+
 # handlers/rand_handlers.rb
 class RandHandler < Erie::ApplicationHandler
-  def initialize(name)
-    @name = name
-    super()
-  end
-  
   def setup
     puts 'setup rand handler ' + @name
-    [
-      [Erie::Application.resources.inputs.values, Erie::Application.resources.outputs.values],
-      [self.resources.inputs.values, self.resources.outputs.values]
-    ].each do |i,o|
-      i.each do |i|
-        o.each do |o|
-          i.subscribe do |message|
-            handle(o,message)
-          end
-        end
-      end
+
+    # do this stuff below automatically in the base class?
+    # set the _input, _value and _update
+    # auto-subscribe to the input channels
+    # set an object variable with the current value
+    # then call a callback
+    @proximity_value = @sound_value = @light_value = 0.0
+
+    @light_input = self.resources.inputs[:light]
+    @proximity_input = self.resources.inputs[:proximity]
+    @sound_input = self.resources.inputs[:sound]
+
+    @red_led_output = self.resources.outputs[:red_led]
+    @green_led_output = self.resources.outputs[:green_led]
+    @blue_led_output = self.resources.outputs[:blue_led]
+
+    @proximity_input.subscribe do |d|
+      @promixity_value = d
+      proximity_update
+    end
+    
+    @sound_input.subscribe do |d|
+      @sound_value = d
+      sound_update
+    end
+    
+    @light_input.subscribe do |d|
+      @light_value = d
+      light_update
+    end
+
+  end
+
+  def sound_update
+    toggle_blue_led
+  end
+
+  def light_update
+    toggle_blue_led
+  end
+
+  def proximity_update
+    if @promixity_value > 0.5
+      @red_led_output.turn_on
+      @green_led_output.turn_off
+    else
+      @red_led_output.turn_off
+      @green_led_output.turn_on
     end
   end
-  
-  def handle(output,message)
-    output.transmit message
+
+  def toggle_blue_led
+    @light_value > 0.5 && @sound_value > 0.5 ? @blue_led_output.turn_on : @blue_led_output.turn_off
   end
 
   def teardown
     puts 'teardown rand handler ' + @name
   end
-  
+
 end
 
 Erie::Application.resources.specify do
-  input :global, RandomInput.new(:name => 'global')
-  output :global, PutsOutput.new('global')
-  handler :global, RandHandler.new('global')
-
-  handler :slum_village, RandHandler.new('slum_village') do
-    input :dilla, RandomInput.new(:name => 'dilla')
-    output :black_milk, PutsOutput.new('hip_hop')
-    handler :d12, RandHandler.new('d12') do
-      input :shady, RandomInput.new(:name => 'shady')
-      output :proof, PutsOutput.new('proof')
-    end
+  handler :leds, RandHandler.new do
+    input :light, RandomInput.new
+    input :proximity, RandomInput.new
+    input :sound, RandomInput.new
+    
+    output :red_led, FauxLEDOutput.new
+    output :green_led, FauxLEDOutput.new
+    output :blue_led, FauxLEDOutput.new
   end
-
-  handler :tigers, RandHandler.new('tigers') do
-    input :pitch, RandomInput.new(:name => 'pitch', :frequency => 0.5)
-    output :home_run, PutsOutput.new('home_run')
-  end
-
-  handler :special_random, RandHandler.new('special_random') do
-    input :shiny, RandomInput.new(:name => 'shiny', :frequency => 0.25)
-    output :fireworks, PutsOutput.new('fireworks')
-  end
-
 end
 
 Erie::Server.start
