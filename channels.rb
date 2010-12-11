@@ -94,10 +94,11 @@ class RandHandler < ApplicationHandler
 end
 
 class ApplicationResources
-  attr_reader :inputs, :outputs
+  attr_reader :inputs, :outputs, :handlers
   def initialize
     @inputs = {}
     @outputs = {}
+    @handlers = {}
   end
   def specify(&b)
     self.instance_exec(&b)
@@ -110,6 +111,10 @@ class ApplicationResources
     puts 'name: ' + name.to_s + ' output_resource: ' + output_resource.inspect
     @outputs[name] = output_resource
   end
+  def handler(name, handler_resource)
+    puts 'name: ' + name.to_s + ' handler_resource: ' + handler_resource.inspect
+    @handlers[name] = handler_resource
+  end
 end
 
 class Application
@@ -117,14 +122,35 @@ class Application
     @@resources ||= ApplicationResources.new
   end
   def self.start_inputs
-    @@resources.inputs.each {|n,i| i.start}
+    start_resources(@@resources.inputs)
   end
   def self.stop_inputs
-    @@resources.inputs.each {|n,i| i.stop}
+    stop_resources(@@resources.inputs)
+  end
+  def self.start_outputs
+    start_resources(@@resources.inputs)
+  end
+  def self.stop_outputs
+    stop_resources(@@resources.inputs)
+  end
+  def self.start_handlers
+    start_resources(@@resources.handlers)
+  end
+  def self.stop_handlers
+    stop_resources(@@resources.handlers)
+  end
+  private
+  def self.start_resources(r)
+    r.each {|n,r| r.start}
+  end
+  def self.stop_resources(r)
+    r.each {|n,r| r.stop}
   end
 end
 
 Application.resources.specify do
+  handler :random, RandHandler.new
+  
   input :first, RandomInput.new('first')
   input :second, RandomInput.new('second')
   
@@ -133,14 +159,12 @@ Application.resources.specify do
 end
 
 EM.run do
-
-  # will be a loop through all handlers
-  h = RandHandler.new
-  h.start
-  
+  Application.start_handlers
+  Application.start_outputs
   Application.start_inputs
-
   EM.add_timer(10) do
+    Application.stop_handlers
+    Application.stop_outputs
     Application.stop_inputs
     EM.stop
   end
