@@ -1,3 +1,5 @@
+# Erie stuff
+
 require 'eventmachine'
 require 'state_machine'
 
@@ -30,6 +32,16 @@ class InputResource < Base
   end
 end
 
+class OutputResource < Base
+  def transmit;end
+end
+
+class ApplicationHandler < Base
+  def handle;end  
+end
+
+# application stuff
+# inputs/random_input.rb
 class RandomInput < InputResource
   def initialize(name)
     @name = name
@@ -52,11 +64,7 @@ class RandomInput < InputResource
     @timer.cancel
   end
 end
-
-class OutputResource < Base
-  def transmit;end
-end
-
+# outputs/puts_output.rb
 class PutsOutput < OutputResource
   def initialize(name)
     @name = name
@@ -66,11 +74,7 @@ class PutsOutput < OutputResource
     puts @name + ': ' + data.inspect
   end
 end
-
-class ApplicationHandler < Base
-  def handle;end  
-end
-
+# handlers/rand_handlers.rb
 class RandHandler < ApplicationHandler
   
   def initialize(options)
@@ -100,14 +104,35 @@ class RandHandler < ApplicationHandler
   
 end
 
-## resources.rb
-# could specifying input, output be like drawing rails routes?
-# Application.resources.specify do
-#   input :in_one, RandomInput.new('one')
-#   input :in_two, RandomInput.new('two')
-#   output :out_red, PutsOutput.new('red')
-#   output :out_blue, PutsOutput.new('blue')
-# end
+class ApplicationResources
+  def initialize
+    @inputs = @outputs = {}
+  end
+  def specify(&b)
+    self.instance_exec(&b)
+  end
+  def input(name,input_resource)
+    puts 'name: ' + name.to_s + ' input_resource: ' + input_resource.inspect
+    @inputs[name] = input_resource
+  end
+  def output(name, output_resource)
+    puts 'name: ' + name.to_s + ' output_resource: ' + output_resource.inspect
+    @outputs[name] = output_resource
+  end
+end
+
+class Application
+  def self.resources
+    @@resources ||= ApplicationResources.new
+  end
+end
+
+Application.resources.specify do
+  input :first, RandomInput.new('first')
+  input :second, RandomInput.new('second')
+  output :red, PutsOutput.new('red')
+  output :blue, PutsOutput.new('blue')
+end
 
 EM.run do
   random_input_one = RandomInput.new('one')
