@@ -77,36 +77,27 @@ end
 # handlers/rand_handlers.rb
 class RandHandler < ApplicationHandler
   
-  def initialize(options)
-    @inputs = options[:inputs]
-    @outputs = options[:outputs]
-    super()
-  end
-  
   def setup
-    @inputs.each do |i|
-      @outputs.each do |o|
+    Application.resources.inputs.each do |n,i|
+      Application.resources.outputs.each do |k,o|
         i.subscribe do |message|
           handle(o,message)
         end
       end
     end
-    @inputs.each { |i| i.start }
   end
   
   def handle(output,message)
     output.transmit message
   end
   
-  def teardown
-    @inputs.each { |i| i.stop }
-  end
-  
 end
 
 class ApplicationResources
+  attr_reader :inputs, :outputs
   def initialize
-    @inputs = @outputs = {}
+    @inputs = {}
+    @outputs = {}
   end
   def specify(&b)
     self.instance_exec(&b)
@@ -125,27 +116,32 @@ class Application
   def self.resources
     @@resources ||= ApplicationResources.new
   end
+  def self.start_inputs
+    @@resources.inputs.each {|n,i| i.start}
+  end
+  def self.stop_inputs
+    @@resources.inputs.each {|n,i| i.stop}
+  end
 end
 
 Application.resources.specify do
   input :first, RandomInput.new('first')
   input :second, RandomInput.new('second')
+  
   output :red, PutsOutput.new('red')
   output :blue, PutsOutput.new('blue')
 end
 
 EM.run do
-  random_input_one = RandomInput.new('one')
-  random_input_two = RandomInput.new('two')
-  
-  puts_output_red = PutsOutput.new('red')
-  puts_output_blue = PutsOutput.new('blue')
 
-  h = RandHandler.new :inputs => [random_input_one, random_input_two], :outputs => [puts_output_red, puts_output_blue]
+  # will be a loop through all handlers
+  h = RandHandler.new
   h.start
   
+  Application.start_inputs
+
   EM.add_timer(10) do
-    h.stop
+    Application.stop_inputs
     EM.stop
   end
 end
