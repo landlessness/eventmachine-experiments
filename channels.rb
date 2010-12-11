@@ -19,6 +19,12 @@ module ResourcesHandler
   def stop_outputs
     stop_resources(resources.inputs)
   end
+  def start_handlers
+    start_resources(resources.handlers)
+  end
+  def stop_handlers
+    stop_resources(resources.handlers)
+  end
   private
   def start_resources(r)
     r.each {|n,r| r.start}
@@ -30,12 +36,6 @@ end
 
 class Application
   extend ResourcesHandler
-  def self.start_handlers
-    start_resources(resources.handlers)
-  end
-  def self.stop_handlers
-    stop_resources(resources.handlers)
-  end
 end
 
 class Resources
@@ -49,14 +49,17 @@ class Resources
     self.instance_exec(&b)
   end
   def input(name, input_resource, options={})
+    raise "'#{name}' is not an #{InputResource.name}." unless input_resource.is_a?(InputResource)
     puts 'name: ' + name.to_s + ' input_resource: ' + input_resource.inspect
     @inputs[name] = input_resource
   end
   def output(name, output_resource, options={})
+    raise "'#{name}' is not an #{OutputResource.name}." unless output_resource.is_a?(OutputResource)
     puts 'name: ' + name.to_s + ' output_resource: ' + output_resource.inspect
     @outputs[name] = output_resource
   end
   def handler(name, handler_resource, options={}, &b)
+    raise "'#{name}' is not an #{ApplicationHandler.name}." unless handler_resource.is_a?(ApplicationHandler)
     puts 'name: ' + name.to_s + ' handler_resource: ' + handler_resource.inspect
     @handlers[name] = handler_resource
     handler_resource.resources.instance_exec(&b) if block_given?
@@ -79,12 +82,29 @@ class Base
 end
 
 class InputResource < Base
-  state_machine {after_transition :on => :start, :do => :receive}
+  state_machine {after_transition :on => :start, :do => :start_timer}
+  state_machine {after_transition :on => :stop, :do => :stop_timer}
   def receive;end
   
-  def initialize
+  def initialize(options={})
     @channel = EM::Channel.new
+    @name = options[:name]
+    @frequency = options[:frequency] || 1.0
+    raise "for input '#{@name}' frequency must be greater than 0.0" if @frequency <= 0.0
     super()
+  end
+  
+  def start_timer
+    @timer = EventMachine::Timer.new(1.0 / @frequency) do
+      EM.defer {
+        receive
+      }
+      start_timer
+    end
+  end
+  
+  def stop_timer
+    @timer.cancel
   end
   
   def subscribe(*a, &b)
@@ -98,34 +118,22 @@ end
 
 class ApplicationHandler < Base
   include ResourcesHandler
-  state_machine {after_transition :on => :start, :do => [:start_inputs, :start_outputs]}
-  state_machine {after_transition :on => :stop, :do => [:stop_outputs, :stop_inputs]}
+  state_machine {after_transition :on => :start, :do => [:start_handlers, :start_outputs, :start_inputs]}
+  state_machine {after_transition :on => :stop, :do => [:stop_inputs, :stop_outputs, :stop_handlers]}
   def handle;end
 end
 
 # application stuff
 # inputs/random_input.rb
 class RandomInput < InputResource
-  def initialize(name,max_delay)
-    @name = name
-    @max_delay = max_delay
-    super()
-  end
   def setup
     puts 'activating random input ' + @name
   end
   def receive
-    @timer = EventMachine::Timer.new(v=(rand * @max_delay)) do
-      EM.defer {
-        # pushes data into channel
-        @channel << [@name, Time.now, v]
-      }
-      receive
-    end
+    @channel << [@name, Time.now, rand]
   end
   def teardown
     puts 'deactivating random input ' + @name
-    @timer.cancel
   end
 end
 # outputs/puts_output.rb
@@ -163,21 +171,26 @@ class RandHandler < ApplicationHandler
 end
 
 Application.resources.specify do
-  handler :random, RandHandler.new
-  
-  input :first, RandomInput.new('first', 1.0)
-  input :second, RandomInput.new('second', 1.0), :auto_start => false
+  input :global, RandomInput.new(:name => 'global')
+  output :global, PutsOutput.new('global')
+  handler :global, RandHandler.new
 
-  output :red, PutsOutput.new('red')
-  output :blue, PutsOutput.new('blue')
+  handler :slum_village, RandHandler.new do
+    input :dilla, RandomInput.new(:name => 'dilla')
+    output :black_milk, PutsOutput.new('hip_hop')
+    handler :d12, RandHandler.new do
+      input :shady, RandomInput.new(:name => 'shady')
+      output :proof, PutsOutput.new('proof')
+    end
+  end
 
   handler :tigers, RandHandler.new do
-    input :pitch, RandomInput.new('pitch',3.0)
+    input :pitch, RandomInput.new(:name => 'pitch', :frequency => 0.5)
     output :home_run, PutsOutput.new('home_run')
   end
 
   handler :special_random, RandHandler.new do
-    input :shiny, RandomInput.new('shiny',4.0)
+    input :shiny, RandomInput.new(:name => 'shiny', :frequency => 0.25)
     output :fireworks, PutsOutput.new('fireworks')
   end
 
