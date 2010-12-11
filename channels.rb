@@ -3,7 +3,7 @@
 require 'eventmachine'
 require 'state_machine'
 
-module ResourceHandler
+module ResourcesHandler
   def resources
     @resources ||= Resources.new
   end
@@ -29,7 +29,7 @@ module ResourceHandler
 end
 
 class Application
-  extend ResourceHandler
+  extend ResourcesHandler
   def self.start_handlers
     start_resources(resources.handlers)
   end
@@ -97,7 +97,7 @@ class OutputResource < Base
 end
 
 class ApplicationHandler < Base
-  include ResourceHandler
+  include ResourcesHandler
   state_machine {after_transition :on => :start, :do => [:start_inputs, :start_outputs]}
   state_machine {after_transition :on => :stop, :do => [:stop_outputs, :stop_inputs]}
   def handle;end
