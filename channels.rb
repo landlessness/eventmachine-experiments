@@ -49,21 +49,21 @@ module Erie
     def specify(&b)
       self.instance_exec(&b)
     end
-    def input(name, input_resource, options={})
+    def input(name, input_resource_clazz, options={})
+      input_resource = input_resource_clazz.new options
       raise "'#{name}' is not an #{InputResource.name}." unless input_resource.is_a?(InputResource)
-      puts 'name: ' + name.to_s + ' input_resource: ' + input_resource.inspect
       input_resource.name = name.to_s
       @inputs[name] = input_resource
     end
-    def output(name, output_resource, options={})
+    def output(name, output_resource_clazz, options={})
+      output_resource = output_resource_clazz.new options
       raise "'#{name}' is not an #{OutputResource.name}." unless output_resource.is_a?(OutputResource)
-      puts 'name: ' + name.to_s + ' output_resource: ' + output_resource.inspect
       output_resource.name = name.to_s
       @outputs[name] = output_resource
     end
-    def handler(name, handler_resource, options={}, &b)
+    def handler(name, handler_resource_clazz, options={}, &b)
+      handler_resource = handler_resource_clazz.new options
       raise "'#{name}' is not an #{ApplicationHandler.name}." unless handler_resource.is_a?(ApplicationHandler)
-      puts 'name: ' + name.to_s + ' handler_resource: ' + handler_resource.inspect
       handler_resource.name = name.to_s
       @handlers[name] = handler_resource
       handler_resource.resources.instance_exec(&b) if block_given?
@@ -71,6 +71,10 @@ module Erie
   end
 
   class Base
+    def initialize(options={})
+      @name = options[:name]
+      super
+    end
     attr_accessor :name
     state_machine :initial => :inactive do
       after_transition :on => :start, :do => :setup
@@ -87,17 +91,22 @@ module Erie
   end
 
   class InputResource < Base
-    state_machine {after_transition :on => :start, :do => :start_timer}
-    state_machine {after_transition :on => :stop, :do => :stop_timer}
-    def receive;end
+
+    def subscribe(*a, &b)
+      @channel.subscribe(*a, &b)
+    end
 
     def initialize(options={})
       @channel = EM::Channel.new
-      @name = options[:name]
       @frequency = options[:frequency] || 1.0
       raise "for input '#{@name}' frequency must be greater than 0.0" if @frequency <= 0.0
-      super()
+      super(options)
     end
+
+    protected
+
+    state_machine {after_transition :on => :start, :do => :start_timer}
+    state_machine {after_transition :on => :stop, :do => :stop_timer}
 
     def start_timer
       @timer = EventMachine::Timer.new(1.0 / @frequency) do
@@ -112,21 +121,47 @@ module Erie
       @timer.cancel
     end
 
-    def subscribe(*a, &b)
-      @channel.subscribe(*a, &b)
-    end
+    attr_reader :channel
+    def receive;end
+
   end
 
   class OutputResource < Base
+    protected
     def transmit;end
   end
 
   class ApplicationHandler < Base
     # TODO: make this a singleton
     include ResourcesHandler
-    state_machine {after_transition :on => :start, :do => [:start_handlers, :start_outputs, :start_inputs]}
+    state_machine {after_transition :on => :start, :do => [:setup_hooks, :start_handlers, :start_outputs, :start_inputs]}
     state_machine {after_transition :on => :stop, :do => [:stop_inputs, :stop_outputs, :stop_handlers]}
+
     def handle;end
+
+    def self.create_attr_reader(name)
+      protected
+      attr_reader name
+    end
+
+    def setup_hooks
+      self.resources.inputs.each do |k,v|
+        ApplicationHandler.create_attr_reader("#{k}_value")
+        ApplicationHandler.create_attr_reader("#{k}_input")
+        instance_variable_set("@#{k}_input",v)
+        instance_variable_set("@#{k}_value",0.0)
+        v.subscribe do |d|
+          instance_variable_set("@#{k}_value",d)
+          instance_eval("#{k}_updated")
+        end
+      end
+
+      self.resources.outputs.each do |k,v|
+        ApplicationHandler.create_attr_reader("#{k}_output")
+        instance_variable_set("@#{k}_output",v)
+      end
+
+    end
   end
 
   class Server
@@ -150,19 +185,14 @@ end
 # application stuff
 # inputs/random_input.rb
 class RandomInput < Erie::InputResource
-  def setup
-    puts 'setup random input ' + @name
-  end
   def receive
-    @channel << rand
-  end
-  def teardown
-    puts 'teardown random input ' + @name
+    channel << rand
   end
 end
 
 # outputs/puts_output.rb
 class FauxLEDOutput < Erie::OutputResource
+
   state_machine :light_state, :initial => :dark do
     event :turn_on do
       transition :dark => :light
@@ -172,92 +202,48 @@ class FauxLEDOutput < Erie::OutputResource
     end
     after_transition :do => :transmit
   end
-  
-  def setup
-    puts 'setup puts output ' + @name
-  end
+
   def transmit
-    puts @name + ': ' + self.light_state
+    puts name + ': ' + self.light_state
   end
-  def teardown
-    puts 'teardown puts output ' + @name
-  end
+
 end
 
 # handlers/rand_handlers.rb
 class RandHandler < Erie::ApplicationHandler
-  def setup
-    puts 'setup rand handler ' + @name
-
-    # do this stuff below automatically in the base class?
-    # set the _input, _value and _update
-    # auto-subscribe to the input channels
-    # set an object variable with the current value
-    # then call a callback
-    @proximity_value = @sound_value = @light_value = 0.0
-
-    @light_input = self.resources.inputs[:light]
-    @proximity_input = self.resources.inputs[:proximity]
-    @sound_input = self.resources.inputs[:sound]
-
-    @red_led_output = self.resources.outputs[:red_led]
-    @green_led_output = self.resources.outputs[:green_led]
-    @blue_led_output = self.resources.outputs[:blue_led]
-
-    @proximity_input.subscribe do |d|
-      @promixity_value = d
-      proximity_update
-    end
-    
-    @sound_input.subscribe do |d|
-      @sound_value = d
-      sound_update
-    end
-    
-    @light_input.subscribe do |d|
-      @light_value = d
-      light_update
-    end
-
-  end
-
-  def sound_update
+  def sound_updated
     toggle_blue_led
   end
 
-  def light_update
+  def light_updated
     toggle_blue_led
   end
 
-  def proximity_update
-    if @promixity_value > 0.5
-      @red_led_output.turn_on
-      @green_led_output.turn_off
+  def proximity_updated
+    if proximity_value > 0.5
+      red_led_output.turn_on
+      green_led_output.turn_off
     else
-      @red_led_output.turn_off
-      @green_led_output.turn_on
+      red_led_output.turn_off
+      green_led_output.turn_on
     end
   end
 
   def toggle_blue_led
-    @light_value > 0.5 && @sound_value > 0.5 ? @blue_led_output.turn_on : @blue_led_output.turn_off
-  end
-
-  def teardown
-    puts 'teardown rand handler ' + @name
+    light_value > 0.5 && sound_value > 0.5 ? blue_led_output.turn_on : blue_led_output.turn_off
   end
 
 end
 
 Erie::Application.resources.specify do
-  handler :leds, RandHandler.new do
-    input :light, RandomInput.new
-    input :proximity, RandomInput.new
-    input :sound, RandomInput.new
+  handler :leds, RandHandler do
+    input :light, RandomInput, frequency: 3.0
+    input :proximity, RandomInput, frequency: 2.0
+    input :sound, RandomInput
     
-    output :red_led, FauxLEDOutput.new
-    output :green_led, FauxLEDOutput.new
-    output :blue_led, FauxLEDOutput.new
+    output :red_led, FauxLEDOutput
+    output :green_led, FauxLEDOutput, pin: 13
+    output :blue_led, FauxLEDOutput, pin: 14
   end
 end
 
