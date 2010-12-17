@@ -3,6 +3,7 @@ module Erie
 
   require 'eventmachine'
   require 'state_machine'
+  require 'benchmark'
 
   module ResourcesHandler
     def resources
@@ -165,12 +166,12 @@ module Erie
   end
 
   class Server
-    def self.start
+    def self.start(time_out=10)
       EM.run do
         Application.start_handlers
         Application.start_outputs
         Application.start_inputs
-        EM.add_timer(10) do
+        EM.add_timer(time_out) do
           Application.stop_inputs
           Application.stop_outputs
           Application.stop_handlers
@@ -247,4 +248,7 @@ Erie::Application.resources.specify do
   end
 end
 
-Erie::Server.start
+elapsed_time = Benchmark.realtime do
+  Erie::Server.start(30)
+end
+puts 'elapsed time: '  + elapsed_time.to_s
